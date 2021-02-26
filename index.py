@@ -28,7 +28,6 @@ from multiprocessing import Process
 from multiprocessing import Queue as Q
 from twisted.internet import reactor
 from rq.decorators import job
-from scrapy.crawler import CrawlerProcess
 from scrapy.crawler import CrawlerRunner
 from urllib.parse import urlparse
 from datetime import datetime
@@ -38,23 +37,52 @@ import logging
 from twisted.internet import reactor
 
 
-#Initialize the flas application
+#Initialize the flask application
 app = Flask(__name__)
 with app.app_context():
     from helper import *
 
-#Configure and intialize Redis task queue    
+"""
+__author__      : Bijin Benny
+__email__       : bijin@ualberta.ca
+__license__     : MIT
+__version__     : 1.0
+Modification    : The native Redis library used in the original reference is 
+                  outdated and is modified to use the new redis library specific
+                  to Flask apps
+                  
+Configure and intialize Redis task queue    
+"""
 app.config['RQ_REDIS_URL']='redis://localhost:6379/0'
 redis_conn = RQ(app)
 
-#Load environment variables and create elastic search DB client 
+"""
+__author__      : Bijin Benny
+__email__       : bijin@ualberta.ca
+__license__     : MIT
+__version__     : 1.0
+Modification    : The deprecated elasticsearch library elasticsearch_dsl is 
+                  removed and replaced with the new elasticsearch library for 
+                  ES clients
+
+Load environment variables and create elastic search DB client 
+"""
 host = os.getenv("HOST")
 user = os.getenv("USERNAME")
 pwd  = os.getenv("PASSWORD")
 port = os.getenv("PORT")
 es = Elasticsearch(hosts="http://"+user+":"+pwd+"@"+host+":"+port+"/")
 
-#Set logging information
+"""
+__author__      : Bijin Benny
+__email__       : bijin@ualberta.ca
+__license__     : MIT
+__version__     : 1.0
+Modification    : Logging framework is added to the code to enable better debugging
+                  through logs
+
+Set logging information
+"""
 logging.basicConfig(filename=datetime.now().strftime('server_%d_%m_%Y.log'),
 level=logging.DEBUG,format='%(asctime)s %(levelname)-8s %(message)s')
 
@@ -62,6 +90,14 @@ level=logging.DEBUG,format='%(asctime)s %(levelname)-8s %(message)s')
 logging.info(es.info())
 
 """
+__author__      : Bijin Benny
+__email__       : bijin@ualberta.ca
+__license__     : MIT
+__version__     : 1.0
+Modification    : The DB mapping/schema used in the orginal code is specific to 
+                  the application the code was used for and needs to be modified
+                  to store information specific to the project experiment
+
 Database schema used to create the DB index if the server is running for
 the first time. Ignores the schema if the index already exists.
 """
@@ -137,22 +173,23 @@ def explore_job(link) :
     """
     logging.info("explore website at : %s"%link)
 
-    #Get final url after possible redictions
     try :
         link = url.crawl(link).url
     except :
         return 0
 
-    #Create or update domain data
-    domain = url.domain(link)
-    res = es.index(index="web",id=domain, body={
-        "homepage":link,
-        "domain":domain,
-        "last_crawl":datetime.now()
-    })
     def f(q):
         try:
-            #Start the crawler
+            """
+            __author__      : Bijin Benny
+            __email__       : bijin@ualberta.ca
+            __license__     : MIT
+            __version__     : 1.0
+            Modification    : The original code used CrawlerProcess class from
+            scrapy library to crawl web pages. However, CrawlerProcess class could
+            not run parallely in Redis tasks threads. CrawlerProcess was replaced by
+            CrawlerRunner class that could run parallely in multiple Redis tasks
+            """
             runner = CrawlerRunner({
                 'USER_AGENT': "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
                 (KHTML, like Gecko) Chrome/55.0.2883.75 Safari/537.36",
@@ -162,10 +199,10 @@ def explore_job(link) :
                 'HTTPCACHE_ENABLED':False,
                 'REDIRECT_ENABLED':False,
                 'SPIDER_MIDDLEWARES' : {
-                    'scrapy.downloadermiddlewares.robotstxt.RobotsTxtMiddleware':True,
-                    'scrapy.spidermiddlewares.httperror.HttpErrorMiddleware':True,
-                    'scrapy.downloadermiddlewares.httpcache.HttpCacheMiddleware':True,
-                    'scrapy.extensions.closespider.CloseSpider':True
+                'scrapy.downloadermiddlewares.robotstxt.RobotsTxtMiddleware':True,
+                'scrapy.spidermiddlewares.httperror.HttpErrorMiddleware':True,
+                'scrapy.downloadermiddlewares.httpcache.HttpCacheMiddleware':True,
+                'scrapy.extensions.closespider.CloseSpider':True
                 },
                 'CLOSESPIDER_PAGECOUNT':500 #only for debug
             })
@@ -237,7 +274,16 @@ def search():
         data["query"]).groupdict()
     logging.info("Expression query : " + str(groups["query"]))
 
-    #Send search request to Elastic search DB with the user query
+    """
+             __author__     : Bijin Benny
+            __email__       : bijin@ualberta.ca
+            __license__     : MIT
+            __version__     : 1.0
+            Modification    : The referenced code included searching web pages
+    based on their domains as well as search queries. Domain search was irrelevant
+    to the experiment use case and the code is modified to perform only query search
+    Send search request to Elastic search DB with the user query
+    """
     response = es.search(index="web-en",body=query.expression_query(groups["query"]))
     logging.info("Raw response" + str(response))
     results = []
